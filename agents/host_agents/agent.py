@@ -195,7 +195,6 @@ class HostAgent:
         async for response_update in a2a_client.send_message_streaming(stream_request):
             print(f"DEBUG: Received update from child agent: {response_update.model_dump_json(indent=2)}")
             
-            # --- MODIFIED: Check for the correct streaming response type ---
             if not isinstance(response_update.root, SendStreamingMessageSuccessResponse):
                 if isinstance(response_update.root, JSONRPCErrorResponse):
                     print(f"ERROR received from child agent: {response_update.root.error.message}")
@@ -203,27 +202,33 @@ class HostAgent:
 
             task_update = response_update.root.result
             
-            # For each update, create a fresh dictionary to yield.
-            # Default to having no new content.
             yield_dict = {"content": None}
-            
-            artifacts_to_check = None
 
-            # Check if the update is an artifact update.
+            # Case 1: The update is an artifact update (e.g., the final answer)
             if isinstance(task_update, TaskArtifactUpdateEvent):
-                artifacts_to_check = [task_update.artifact]
-            # Also check the initial task object which might contain artifacts.
-            elif isinstance(task_update, Task) and task_update.artifacts:
-                 artifacts_to_check = task_update.artifacts
+                for part in task_update.artifact.parts:
+                    if isinstance(part.root, TextPart):
+                        yield_dict["content"] = part.root.text
+                        break  # Assume one text part per artifact for simplicity
 
-            # If the update included an artifact, extract the text content.
-            if artifacts_to_check:
-                for artifact in artifacts_to_check:
+            # Case 2: The update is a status change that includes a message (e.g., a question)
+            elif isinstance(task_update, TaskStatusUpdateEvent):
+                if task_update.status and task_update.status.message and task_update.status.message.parts:
+                    for part in task_update.status.message.parts:
+                        if isinstance(part.root, TextPart):
+                            yield_dict["content"] = part.root.text
+                            break # Assume one text part per message for simplicity
+
+            # Case 3: The initial Task object itself contains artifacts
+            elif isinstance(task_update, Task) and task_update.artifacts:
+                for artifact in task_update.artifacts:
                     for part in artifact.parts:
                         if isinstance(part.root, TextPart):
-                            # Put the found text into our dictionary for this specific yield.
                             yield_dict["content"] = part.root.text
+                            break
+                    if yield_dict["content"] is not None:
+                        break
             
             # Yield the processed dictionary to the consumer (_delegate_task).
-            # It will either have content or content will be None.
+            # It will have content if any of the above cases found text.
             yield yield_dict
