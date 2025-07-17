@@ -78,7 +78,7 @@ def print_json_response(response: Any, title: str) -> None:
 # -----------------------------------------------------------------------------
 async def handle_non_streaming(client: A2AClient, text: str):
     # Build and send the first message
-    request = SendMessageRequest(params=MessageSendParams(**build_message_payload(text)))
+    request = SendMessageRequest(id=uuid4().hex, params=MessageSendParams(**build_message_payload(text)))  # Generate a unique ID
     result = await client.send_message(request)  # Wait for agent reply
     print_json_response(result, "Agent Reply")  # Print the reply
 
@@ -88,11 +88,11 @@ async def handle_non_streaming(client: A2AClient, text: str):
         if task.status.state == TaskState.input_required:
             follow_up = input("\U0001F7E1 Agent needs more input. Your reply: ")
             follow_up_req = SendMessageRequest(
+                id=uuid4().hex,  # Generate a unique ID for the follow-up
                 params=MessageSendParams(**build_message_payload(follow_up, task.id, task.contextId))
             )
             follow_up_resp = await client.send_message(follow_up_req)
             print_json_response(follow_up_resp, "Follow-up Response")
-
 # -----------------------------------------------------------------------------
 # Handles streaming message and recursively continues if more input is needed
 # -----------------------------------------------------------------------------
@@ -155,7 +155,7 @@ async def interactive_loop(client: A2AClient, supports_streaming: bool):
 # Command-line entry point
 # -----------------------------------------------------------------------------
 @click.command()
-@click.option("--agent-url", default="http://127.0.0.1:10000", help="URL of the A2A agent to connect to")
+@click.option("--agent-url", default="http://127.0.0.1:10003", help="URL of the A2A agent to connect to")
 def main(agent_url: str):
     asyncio.run(run_main(agent_url))  # Launch async event loop with provided agent URL
 
